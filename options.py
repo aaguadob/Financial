@@ -11,10 +11,10 @@ class Option():
         self.original_sigma = sigma
         self.maturity = maturity
         self.dividend = dividend
-        self.implied = True
+        self.implied = implied
         self.lamda = 1.0
         if self.implied:
-            sigma = sigma*np.exp(-self.lamda*stock/strike)
+            sigma = sigma * np.exp(-self.lamda * stock/strike)
             self.sigma = sigma
         self.d1 = (np.log(stock/strike)+(risk_free-dividend+sigma**2/2)*maturity)/(sigma*np.sqrt(maturity))
         self.d2 = (np.log(stock/strike)+(risk_free-dividend-sigma**2/2)*maturity)/(sigma*np.sqrt(maturity))
@@ -41,7 +41,7 @@ class Option():
             denominator1 = -1.0/self.sigma + self.sigma*self.maturity/(self.stock/self.strike+(self.risk_free-self.dividend+self.sigma**2/2)*self.maturity)
             denominator2 = -1.0/self.sigma - self.sigma*self.maturity/(self.stock/self.strike+(self.risk_free-self.dividend-self.sigma**2/2)*self.maturity)
             delta_call+= -self.original_sigma*self.lamda/self.strike*(self.stock*np.exp(-self.dividend*self.maturity)*exp_func*denominator1-self.strike*exp_func2*np.exp(self.risk_free*self.maturity*denominator2))
-            delta_put+= -self.original_sigma*self.lamda/self.strike*(-self.strike*exp_func2*np.exp(-self.risk_free*self.maturity*denominator2+self.stock*np.exp(self.dividend*self.maturity)*exp_func*denominator1))
+            delta_put += -self.original_sigma*self.lamda/self.strike*(-self.strike*exp_func2*np.exp(-self.risk_free*self.maturity*denominator2+self.stock*np.exp(self.dividend*self.maturity)*exp_func*denominator1))
         print("The number of shares needed to hedge a call option are:", delta_call)
         print("The number of shares needed to hedge a put option are:", delta_put)
         return delta_call, delta_put
@@ -53,7 +53,7 @@ class Option():
         theta_call+= self.dividend*self.stock*np.exp(-self.dividend*self.maturity)*stats.norm.cdf(self.d1)
 
         theta_put = -self.stock*np.exp(-self.dividend*self.maturity)*self.sigma*exp_func/2.0/np.sqrt(self.maturity)
-        theta_put+= self.risk_free*self.strike*np.exp(-self.risk_free*self.maturity)*stats.norm.cdf(-self.d2)
+        theta_put += self.risk_free*self.strike*np.exp(-self.risk_free*self.maturity)*stats.norm.cdf(self.d2)
         theta_put+= -self.dividend*self.stock*np.exp(-self.dividend*self.maturity)*stats.norm.cdf(-self.d1)
         return beta*theta_call, beta*theta_put
     def get_gamma(self, beta = 1.0):
@@ -68,6 +68,6 @@ class Option():
         return vega, vega
     def geta_rho(self, beta = 1.0):
         #first derivative with respect to r equal to 0
-        rho_call = self.strike*self.maturity*np.exp(self.risk_free*self.maturity)**stats.norm.cdf(self.d2)
+        rho_call = self.strike*self.maturity*np.exp(-self.risk_free*self.maturity)*stats.norm.cdf(self.d2)
         rho_put = -self.strike*self.maturity*np.exp(self.risk_free*self.maturity)**stats.norm.cdf(-self.d2)
         return rho_call, rho_put
