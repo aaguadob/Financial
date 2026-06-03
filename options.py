@@ -45,23 +45,22 @@ class Option:
                       - self.risk_free * self.strike * np.exp(-self.risk_free * self.maturity) * stats.norm.cdf(self.d2)
                       + self.dividend * self.stock * np.exp(-self.dividend * self.maturity) * stats.norm.cdf(self.d1))
 
-        theta_put  = (-self.stock * np.exp(-self.dividend * self.maturity) * self.sigma * exp_func / (2 * np.sqrt(self.maturity))
-                      + self.risk_free * self.strike * np.exp(-self.risk_free * self.maturity) * stats.norm.cdf(-self.d2)
-                      - self.dividend * self.stock * np.exp(-self.dividend * self.maturity) * stats.norm.cdf(-self.d1))
-
-        return beta * theta_call, beta * theta_put
-
-    def get_gamma(self, beta=1.0):
-        exp_func = 1.0 / np.sqrt(2 * np.pi) * np.exp(-self.d1**2 / 2)
-        gamma = exp_func / (self.stock * self.sigma * np.sqrt(self.maturity)) * np.exp(-self.dividend * self.maturity)
-        return beta * gamma, beta * gamma
-
-    def get_vega(self, beta=1.0):
-        exp_func = 1.0 / np.sqrt(2 * np.pi) * np.exp(-self.d1**2 / 2)
-        vega = self.stock * np.sqrt(self.maturity) * exp_func * np.exp(-self.dividend * self.maturity)
-        return beta * vega, beta * vega
-
-    def get_rho(self, beta=1.0):
-        rho_call =  self.strike * self.maturity * np.exp(-self.risk_free * self.maturity) * stats.norm.cdf(self.d2)
-        rho_put  = -self.strike * self.maturity * np.exp(-self.risk_free * self.maturity) * stats.norm.cdf(-self.d2)
-        return beta * rho_call, beta * rho_put
+        theta_put = -self.stock*np.exp(-self.dividend*self.maturity)*self.sigma*exp_func/2.0/np.sqrt(self.maturity)
+        theta_put+= self.risk_free*self.strike*np.exp(-self.risk_free*self.maturity)*stats.norm.cdf(-self.d2)
+        theta_put+= -self.dividend*self.stock*np.exp(-self.dividend*self.maturity)*stats.norm.cdf(-self.d1)
+        return beta*theta_call, beta*theta_put
+    def get_gamma(self, beta = 1.0):
+        #second derivative with respect to S equal to 0
+        exp_func = 1.0/np.sqrt(2*np.pi)*np.exp(-self.d1**2/2)
+        gamma = exp_func/self.stock/self.sigma/np.sqrt(self.maturity)*np.exp(-self.dividend*self.maturity)
+        return gamma, gamma
+    def get_vega(self, beta = 1.0):
+        #first derivative with respect to sigma equal to 0
+        exp_func = 1.0/np.sqrt(2*np.pi)*np.exp(-self.d1**2/2)
+        vega = self.stock*np.sqrt(self.maturity)*exp_func*np.exp(-self.dividend*self.maturity)
+        return vega, vega
+    def get_rho(self, beta = 1.0):
+        #first derivative with respect to r equal to 0
+        rho_call = self.strike*self.maturity*np.exp(self.risk_free*self.maturity)**stats.norm.cdf(self.d2)
+        rho_put = -self.strike*self.maturity*np.exp(self.risk_free*self.maturity)**stats.norm.cdf(-self.d2)
+        return rho_call, rho_put
