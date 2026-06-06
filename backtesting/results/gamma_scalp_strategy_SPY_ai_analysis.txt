@@ -1,0 +1,51 @@
+Strategy : gamma_scalp_strategy
+Ticker   : SPY
+Generated: 2026-06-06 22:57
+────────────────────────────────────────────────────────────────────────
+
+## 1. Executive Summary
+
+On paper this is an exceptional strategy — 17.6% CAGR, Sharpe 3.45, 81% win rate, sub-9% drawdown — but the numbers are *too* clean for what is fundamentally a short-volatility/options book, and several of them are internally inconsistent with how short-gamma P&L actually behaves. My base case is that the headline metrics are inflated by under-modeled transaction costs, an artificially smooth (monthly-marked) equity curve, and very likely some look-ahead in the option/volatility pricing. I would **not** allocate capital on this evidence without a code-level audit and a cost-realistic re-run.
+
+## 2. Performance Assessment
+
+- **Risk-adjusted return:** Sharpe 3.45 and Calmar 2.0 are in "be suspicious" territory. Sustained Sharpe >3 over four years is rarer than almost any real fund achieves; it usually signals an artifact, not an edge. The CAGR of 17.6% is good but *unremarkable* on its own — it's the trivially low denominator (volatility/drawdown) that produces the spectacular ratios, and that denominator is the part I trust least.
+- **Win rate & profit factor:** 81% win rate with PF 4.77 is the canonical short-premium signature — many wins, few losses. Nothing wrong with that *shape*, but see §3/§5: the **magnitude** of the wins is the problem.
+- **Capital efficiency caveat:** Only 10% of capital is deployed per trade with max 1 position. The other 90% sits idle. During 2022–24, cash earned 4–5% risk-free — if that isn't credited, returns are understated; if Sharpe is computed without subtracting the risk-free rate, it's overstated. Worth clarifying which.
+- **Per-trade economics don't add up:** Mean trade return is **+14.6%**, with winners averaging +23% and several months at +35–46%. A short straddle / gamma scalp simply does not earn 35% in a month from theta — that magnitude implies either heavy unmodeled leverage or mispriced options. Genuine short-gamma books earn *small* steady increments and lose big occasionally. Here the wins are huge *and* frequent, which is economically backwards.
+
+## 3. Statistical Validity
+
+- **Sample size:** 43 trades is small. The rough rule (t-stat ≈ mean/std × √n) gives mean 0.146, std 0.215, √43 ≈ 6.56 → t ≈ 4.4, nominally significant. **But** the trades are sequential, overlapping monthly rolls of the same underlying with the same signal — they are highly autocorrelated, so the *effective* independent sample is far smaller than 43. Treat the significance as soft.
+- **Two regimes, one of them untested:** 41 of 43 trades are "short"; only **2** are "long," and both lost catastrophically (−50.8%, −37.0%). The directional overlay that occasionally flips the book is statistically untested (n=2) and 0-for-2 — that's a coin that landed wrong twice, telling you essentially nothing except that the long side is unvalidated and dangerous.
+- **Distribution fit:** The risk engine correctly rejects normality — GEV/skew-normal win, negative skew −1.08, excess kurtosis +0.99. Good that the analysis acknowledges fat left tails. But fitting extreme-value distributions to 43 points means wide confidence intervals; the 99% CVaR estimates (−64% parametric vs −51% historical) disagree by 13 points, which is exactly the instability you'd expect from too little tail data.
+
+## 4. Tail Risk & Downside
+
+- **The advertised max drawdown (−8.7%) is almost certainly understated.** It's derived from a *monthly* equity curve, which marks positions only at month-end and hides intra-trade excursions. A single trade lost −50.8% of its position; the monthly grid smooths that into a gentle dip. The real path-dependent drawdown is larger than reported.
+- **Tail magnitude:** 99% CVaR around −51% to −64% *per trade* is severe. At the current 10% sizing, a worst-case trade costs ~5% of account — survivable. But this is a short-gamma book: tail losses cluster with volatility spikes, and if sizing were ever increased (the obvious temptation given the smooth curve), a single event could be account-threatening. Negative skew + fat tails = the classic "pennies in front of a steamroller" risk profile.
+- **Loss concentration:** The two long trades account for ~53% of all dollar losses (−0.88 of −1.66 cumulative). The strategy's downside isn't diffuse — it's concentrated in the regime-switch signal.
+
+## 5. Concerns & Red Flags
+
+1. **Transaction costs are unrealistic for options.** Commission is set to 0.001 (10 bps) with no bid-ask spread or slippage. Gamma scalping requires continuous delta-hedging; real-world spreads on SPY options + hedging slippage can run materially per round-trip. This is the single most likely reason the edge would evaporate live.
+2. **Win magnitudes inconsistent with short-gamma reality** (see §2) — strongest signal of mispricing or look-ahead in how options/realized-vol are valued.
+3. **Suspiciously monotonic equity curve.** A short-vol strategy that sailed through 2022 (rate shock, −25% SPY) with only −8.7% DD is hard to believe. The curve barely flinches even during the months containing the −33% and −51% trades — consistent with monthly marking masking the pain.
+4. **Look-ahead suspicion.** Gamma-scalp P&L hinges on realized-vol vs implied-vol. If the backtest prices entries using same-day or trailing-window realized vol that "knows" the upcoming move, you'd get exactly this pattern: large, reliable wins. I'd want to audit the pricing/vol-estimation code directly (the repo has `spy_gamma_scalp.py` — a line-level check of how options are priced and when vol is sampled would settle this quickly).
+5. **Single asset, single 4-year window.** No out-of-sample, no other underlyings, no parameter-stability test. Covers a specific macro regime (ZIRP→hiking→easing). No evidence it generalizes.
+6. **Sharpe likely computed on the smoothed monthly curve**, mechanically inflating it.
+
+## 6. Overall Verdict
+
+**Likely artifact, not a deployable edge — at least not as measured.** The qualitative *shape* (short premium, high win rate, negative skew, fat left tail) is a real and well-known risk premium, so there may be a genuine kernel here. But the *quantitative* picture — Sharpe 3.45, +14.6% mean monthly trade return, glass-smooth equity through 2022, and a 10-bps cost assumption for a delta-hedged options book — points to results that won't survive realistic frictions and an honest mark-to-market.
+
+I would **withhold capital** pending four things, in order of priority:
+1. **Re-run with realistic options costs** (bid-ask + hedging slippage), not 10 bps.
+2. **Audit the option/vol pricing code for look-ahead** — confirm entry pricing uses only information available at entry.
+3. **Report drawdown on the daily/intra-trade equity path**, not monthly marks.
+4. **Out-of-sample / multi-asset validation**, and quarantine or fix the long-side signal (0-for-2, half the total losses).
+
+If the strategy still shows a Sharpe of ~1–1.5 after realistic costs and honest marking, *that* would be a believable and potentially allocatable result. The current 3.45 is not.
+
+---
+*Caveat: this assessment is based solely on the summary JSON. Several of my conclusions (look-ahead, cost realism, drawdown understatement) are hypotheses that a direct review of the backtest code would confirm or refute — I'd recommend that as the immediate next step before any allocation decision.*

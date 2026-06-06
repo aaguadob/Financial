@@ -1,0 +1,196 @@
+# ── Backtest Configuration ──────────────────────────────────────────────────
+#
+# Run with:
+#   python backtesting/backtest.py
+#   python backtesting/backtest.py --config backtesting/config.yaml
+#   python backtesting/backtest.py --no-plot
+
+ticker:      "SPY"
+start_date:  "2021-01-01"
+end_date:    "2024-12-31"
+
+initial_capital: 100000.0
+commission:      0.001          # fraction of position value per trade leg
+
+# ── Strategy ────────────────────────────────────────────────────────────────
+# Path to a strategy file (relative to project root or absolute).
+# The file must define a class named exactly 'Strategy'.
+#
+# ── Equity strategies (price-based, generic simulator) ──────────────────────
+#   pullback_strategy.py              (long)
+#   coiled_spring_strategy.py         (long)
+#   bullish_divergence_strategy.py    (long)
+#   blue_sky_breakout_strategy.py     (long)
+#   bullish_base_breakout_strategy.py (long)
+#   relief_rally_short_strategy.py    (short)
+#   bearish_divergence_strategy.py    (short)
+#   gap_down_short_strategy.py        (short)
+#   blue_sea_breakdown_strategy.py    (short)
+#   rising_wedge_breakdown_strategy.py (short)
+#
+# ── Volatility strategies (IV vs HV, custom options simulator) ──────────────
+#   straddle_strategy.py       — ATM straddle, sell when IV>>HV / buy when IV<<HV
+#                                Uses Black-Scholes mark-to-model daily.
+#                                Key params: hv_window, vrp_threshold, maturity_days,
+#                                            iv_ticker (default '^VIX'),
+#                                            stop_loss_pct, take_profit_pct
+#
+#   gamma_scalp_strategy.py    — Delta-neutral gamma scalp, short gamma when IV>>HV
+#                                Uses GammaScalping with actual forward price path.
+#                                Key params: hv_window, vrp_threshold, maturity_days,
+#                                            iv_ticker (default '^VIX'), option_type
+#
+# Both vol strategies accept iv_fixed: 0.20 to bypass the IV download.
+#
+# ── Earnings straddle strategies (always long, custom options simulator) ─────
+#   pre_earnings_straddle_strategy.py
+#       Buy straddle 3-4 weeks before earnings, sell 1-3 days before the event.
+#       Captures IV expansion ("IV run-up") without holding through IV crush.
+#       Key params: ticker (MUST match backtest ticker), days_before_entry (21),
+#                   days_before_exit (2), earnings_iv_premium (0.05),
+#                   iv_ticker ('^VIX'), stop_loss_pct (1.0)
+#       Requires: lxml  (pip3 install lxml)
+#
+#   post_earnings_straddle_strategy.py
+#       Buy straddle 1-2 days before earnings, hold 21 days through the event.
+#       Profits from a large post-earnings directional move.
+#       Key params: ticker, days_before_entry (2), maturity_days (21),
+#                   iv_ticker ('^VIX'), stop_loss_pct (1.0)
+#       Requires: lxml  (pip3 install lxml)
+#
+# NOTE: SPY has no earnings. Switch ticker to an individual stock (e.g. "AAPL")
+#       when using either earnings strategy.
+
+# ── Active strategy ──────────────────────────────────────────────────────────
+
+# Equity example (comment out when using a vol strategy below):
+# strategy:
+#   path: "strategies/blue_sky_breakout_strategy.py"
+#   params: {}
+
+# Straddle — sell vol when IV >> HV, buy vol when IV << HV:
+strategy:
+  path: "strategies/straddle_strategy.py"
+  params:
+    hv_window:       20
+    vrp_threshold:   0.03
+    maturity_days:   21        # ~1 month
+    risk_free:       0.05
+    iv_ticker:       "^VIX"   # use "^VXN" for QQQ, or set iv_fixed: 0.20
+    stop_loss_pct:   1.0      # exit when lost 1× premium
+    take_profit_pct: 0.75     # exit when captured 75% of premium
+
+# Gamma scalp — delta-neutral, long gamma when IV < HV, short when IV > HV:
+strategy:
+  path: "strategies/gamma_scalp_strategy.py"
+  params:
+    hv_window:      20
+    vrp_threshold:  0.03
+    maturity_days:  21
+    risk_free:      0.05
+    option_type:    "call"    # or "put"
+    iv_ticker:      "^VIX"
+
+# Pre-earnings IV expansion — buy straddle weeks before earnings, sell before event:
+#strategy:
+#  path: "strategies/pre_earnings_straddle_strategy.py"
+#  params:
+#    ticker:              "AAPL"   # must match the backtest ticker above
+#    days_before_entry:   21       # ~3 weeks before earnings
+#    days_before_exit:    1        # close just before the announcement
+#    earnings_iv_premium: 0.05     # +5% vol accumulated by event date
+#    risk_free:           0.05
+#    iv_ticker:           "^VIX"
+#    stop_loss_pct:       1.0
+
+# Post-earnings move — buy straddle just before earnings, hold through the event:
+#strategy:
+#  path: "strategies/post_earnings_straddle_strategy.py"
+#  params:
+#    ticker:            "AAPL"   # must match the backtest ticker above
+#    days_before_entry: 2        # enter 2 trading days before earnings
+#    maturity_days:     21       # hold ~1 month through and past the event
+#    risk_free:         0.05
+#    iv_ticker:         "^VIX"
+#    stop_loss_pct:     1.0
+
+# ── Position Sizing ─────────────────────────────────────────────────────────
+# NOTE: vol strategies trade option premium, not stock notional.
+#       Use a smaller size_pct (0.05–0.15) to avoid over-leveraging.
+position:
+  size_pct: 0.10    # fraction of current cash committed per trade
+  max_open: 1       # max concurrent open positions
+
+# ── Risk Analysis ────────────────────────────────────────────────────────────
+# Fits the trade P&L distribution and computes VaR / CVaR via three methods:
+#   historical  : direct empirical percentile from past trades
+#   parametric  : from the best-fit probability distribution (analytical)
+#   monte_carlo : sampled from the fitted distribution (n_simulations draws)
+#
+# The Monte Carlo section shows the full range of possible P&L outcomes if
+# one more trade were taken today: E[P&L], P(loss), VaR, and CVaR.
+#
+# Distributions (ranked by AIC — lowest = best fit):
+#   norm, t, skewnorm, laplace, gev
+#
+# Plots:
+#   pnl_distribution — histogram + all fitted PDF curves + historical VaR lines
+#   qq_plot          — empirical vs theoretical quantiles of the best-fit dist
+#   monte_carlo      — next-trade simulated P&L with VaR / CVaR markers
+
+risk:
+  enabled: true
+  confidence_levels: [0.95, 0.99]
+  n_simulations: 10000
+  distributions:
+    - norm
+    - t
+    - skewnorm
+    - laplace
+    - gev
+  plots:
+    - pnl_distribution
+    - qq_plot
+    - monte_carlo
+
+# ── AI Strategy Analysis ────────────────────────────────────────────────────
+# Exports all backtest results to JSON, then calls the Claude CLI (`claude -p`)
+# for a written quantitative analysis — no API key needed, uses the same
+# Claude Code session that is already authenticated.
+#
+# model: omit (or comment out) to use the CLI default (Sonnet)
+#        set to "claude-opus-4-8" for the most thorough analysis
+#
+# save_report: writes the analysis to <save_dir>/<strategy>_ai_analysis.txt
+
+ai_analysis:
+  enabled: true
+  model: "claude-opus-4-8"
+  save_report: true
+  timeout_seconds: 120
+
+# ── Output ──────────────────────────────────────────────────────────────────
+# Choose which metrics to print (remove any you don't want):
+#   total_return, cagr, sharpe, max_drawdown, calmar,
+#   n_trades, win_rate, avg_win_pct, avg_loss_pct, profit_factor
+#
+# Choose which plots to show (remove any you don't want):
+#   equity_curve, drawdown, trade_pnl
+
+output:
+  metrics:
+    - total_return
+    - cagr
+    - sharpe
+    - max_drawdown
+    - calmar
+    - n_trades
+    - win_rate
+    - avg_win_pct
+    - avg_loss_pct
+    - profit_factor
+  plots:
+    - equity_curve
+    - drawdown
+    - trade_pnl
+  save_dir: "backtesting/results"
